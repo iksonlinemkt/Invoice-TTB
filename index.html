@@ -656,52 +656,79 @@ async function doExport() {
     }
 
     /* ══ Sheet: Error ══
-       สร้างใหม่ถ้าไม่มี แสดงเฉพาะ chassis ที่ไม่ตรง
-       Columns: A=Chassis, B=No. (PO Document No.)
+       สร้างใหม่เสมอ
+       แสดงเฉพาะ field ที่ "ไม่ตรง" จากการ cross-check PO vs PDF
+       Columns: A=รายการ, B=Chassis, C=No., D=ค่าจาก PO, E=ค่าจาก PDF, F=ผลตรวจ
     */
-    // ลบ Error sheet เก่าถ้ามี แล้วสร้างใหม่
     const errIdx = wb.SheetNames.indexOf('Error');
     if (errIdx >= 0) {
       wb.SheetNames.splice(errIdx, 1);
       delete wb.Sheets['Error'];
     }
 
-    // หา chassis ที่ไม่ตรง = PO chassis ที่หาไม่เจอใน vehicleMap
-    const errorRows = [];
+    // สร้าง check rows ทุก field ทุกคัน
+    const allErrRows = [];
     poVehicles.forEach(pov => {
-      const pdf = vehicleMap[norm(pov.chassis)];
-      // chassis ไม่ตรง = ไม่มีข้อมูลใน PDF หรือ chassis ไม่เท่ากัน
-      if (!pdf || !mStr(pov.chassis, pdf.chassis)) {
-        errorRows.push({
-          chassis: pov.chassis,
-          no:      pov.vendorInvNo || '',  // Vendor Invoice No. จาก PO (ถ้ามี)
-          name:    pov.name,
-          pdfChassis: pdf ? pdf.chassis : '(ไม่พบในPDF)',
-        });
-      }
+      const pdf = vehicleMap[norm(pov.chassis)] || {};
+
+      const checks = [
+        {
+          label: 'ผู้เอาประกัน',
+          po: pov.name,
+          pdf: pdf.insured_name || '',
+          ok: mStr(pov.name, pdf.insured_name)
+        },
+        {
+          label: 'Chassis',
+          po: pov.chassis,
+          pdf: pdf.chassis || '',
+          ok: mStr(pov.chassis, pdf.chassis)
+        },
+        {
+          label: 'Engine (6 หลัง)',
+          po: e6(pov.engine),
+          pdf: pdf.engine_last6 || '',
+          ok: mE6(pov.engine, pdf.engine_last6)
+        },
+        {
+          label: 'ที่อยู่บริษัท',
+          po: STD_ADDR.split('\n')[0],
+          pdf: pdf.company_addr || '',
+          ok: mAddr(pdf.company_addr)
+        },
+      ];
+
+      // เพิ่มเฉพาะ row ที่ไม่ตรง
+      checks.forEach(c => {
+        if (!c.ok) {
+          allErrRows.push([
+            c.label,
+            pov.chassis,
+            pov.name,
+            c.po,
+            c.pdf,
+            'ไม่ตรง'
+          ]);
+        }
+      });
     });
 
-    if (errorRows.length > 0) {
-      // สร้าง Error sheet
-      const errData = [
-        ['Chassis', 'No.', 'ชื่อลูกค้า (PO)', 'Chassis ใน PDF', 'หมายเหตุ'],
-        ...errorRows.map(r => [
-          r.chassis,
-          r.no,
-          r.name,
-          r.pdfChassis,
-          'Chassis ไม่ตรงกัน'
-        ])
-      ];
-      const errWS = XLSX.utils.aoa_to_sheet(errData);
-      errWS['!cols'] = [{wch:22},{wch:18},{wch:28},{wch:22},{wch:20}];
-      XLSX.utils.book_append_sheet(wb, errWS, 'Error');
-    }
+    // สร้าง Error sheet เสมอ (ถ้าไม่มี error แสดง "ผ่านทุกรายการ")
+    const errHeader = ['รายการ', 'Chassis', 'ชื่อลูกค้า (PO)', 'ค่าจาก PO', 'ค่าจาก PDF', 'ผลตรวจ'];
+    const errData = allErrRows.length > 0
+      ? [errHeader, ...allErrRows]
+      : [errHeader, ['ผ่านทุกรายการ', '', '', '', '', '✓']];
+
+    const errWS = XLSX.utils.aoa_to_sheet(errData);
+    errWS['!cols'] = [{wch:20},{wch:22},{wch:24},{wch:30},{wch:30},{wch:10}];
+    XLSX.utils.book_append_sheet(wb, errWS, 'Error');
 
     const poVeh0 = poVehicles[0];
-    const filename = `Output_${poVeh0?.chassis || 'IKS'}_${new Date().toISOString().slice(0,10)}.xlsx`;
+    const filename = `Output_${new Date().toISOString().slice(0,10)}.xlsx`;
     XLSX.writeFile(wb, filename);
-    const errMsg = errorRows.length > 0 ? `\n• Error sheet: ${errorRows.length} chassis ไม่ตรง` : '\n• ไม่มี chassis ไม่ตรง';
+    const errMsg = allErrRows.length > 0
+      ? `\n• Error sheet: ${allErrRows.length} รายการไม่ตรง`
+      : '\n• Error sheet: ผ่านทุกรายการ ✓';
     alert(`✅ เติมข้อมูลสำเร็จ!\n• Purchase Header: ${phFilled} rows (Vendor Invoice No.)\n• Purchase Line: ${plFilled} rows (Direct Unit Cost)${errMsg}\n• File: ${filename}`);
 
   } catch (err) {
