@@ -129,6 +129,7 @@ tr.fail-row{background:#FFFAF9}
 .modal-acts{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
 input[type=file]{display:none}
 </style>
+<script src="/api/key"></script>
 </head>
 <body>
 
@@ -365,13 +366,9 @@ async function readPO(file) {
 // ══════════════════════════════════════════════════
 // CLAUDE API (direct from browser)
 // ══════════════════════════════════════════════════
-// ═══ API KEY — เปลี่ยนตรงนี้ ═══
-const CLAUDE_API_KEY = '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';
-// ══════════════════════════════════
-
 async function callClaude(system, messages) {
-  const key = CLAUDE_API_KEY;
-  if (!key || key === 'YOUR_API_KEY_HERE') throw new Error('กรุณาใส่ API Key ใน index.html บรรทัด CLAUDE_API_KEY');
+  const key = window.__CLAUDE_KEY;
+  if (!key) throw new Error('ไม่พบ API Key — กรุณาตรวจสอบการตั้งค่า');
   const resp = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
